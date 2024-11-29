@@ -77,7 +77,7 @@ vessel.auto_pilot.target_pitch_and_heading(90, 90)
 turn_angle = 0
 
 flag1 = False
-flag2 = FalseD:\Python_Projects\KOSMOSTARS\main.py
+flag2 = False
 px = ut() - START_TIME
 while True:
     TIME = ut() - START_TIME
