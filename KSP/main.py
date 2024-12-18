@@ -3,20 +3,18 @@ import time
 import krpc
 import MathModel
 
-PI = math.pi
-P = math.degrees(MathModel.P)
+FILENAME_RESULTS_KSP = "resultsKSP.txt"
 
-def print_report(mess):
-    print(f"Время {round(TIME): >3} c | Высота {round(ALTITUDE): >6} м | {mess}")
+
+def print_report(message):
+    print(f"Время {round(TIME): >3} c | Высота {round(ALTITUDE): >6} м | {message}")
 
 
 x = []
 yV = []
-yVh = []
-yVl = []
 yH = []
 
-target_altitude = 230000
+target_apoapsis = 230000
 turn_start_time = MathModel.turn_start_time
 turn_end_time = MathModel.turn_end_time
 
@@ -74,40 +72,36 @@ stage7_activated = True
 vessel.auto_pilot.engage()
 vessel.auto_pilot.target_pitch_and_heading(90, 90)
 
-turn_angle = 0
-
 flag1 = False
 flag2 = False
 px = ut() - START_TIME
+u_angle = 0
+
 while True:
     TIME = ut() - START_TIME
     ALTITUDE = altitude()
     APOAPSIS = apoapsis()
 
     # Запись данных для графика
-    if TIME - px >= 1:
+    if TIME - px >= 0.5:
         x.append(TIME)
-        yV.append(speed())
-        yVh.append(Vh())
-        yVl.append(Vl())
-        yH.append(ALTITUDE)
+        yV.append(round(speed()))
+        yH.append(round(ALTITUDE))
         px = TIME
+
+    new_u_angle = math.degrees(MathModel.u(TIME))
+    if abs(new_u_angle - u_angle) > 0.5:
+        u_angle = new_u_angle
+        vessel.auto_pilot.target_pitch_and_heading(90 - u_angle, 90)
 
     if turn_start_time < TIME < turn_end_time:
         if not flag1:
             flag1 = True
             print_report("Начало разворота")
-        frac = ((TIME - turn_start_time) /
-                (turn_end_time - turn_start_time))
-        new_turn_angle = frac * 90
-        if abs(new_turn_angle - turn_angle) > 0.5:
-            turn_angle = new_turn_angle
-            vessel.auto_pilot.target_pitch_and_heading(max(P, 90-turn_angle), 90)
     elif turn_end_time < TIME:
         if not flag2:
             flag2 = True
             print_report("Окончание разворота")
-        vessel.auto_pilot.target_pitch_and_heading(P, 90)
 
     if not stage6_activated:
         if stage_7_fuel() == 0:
@@ -117,7 +111,8 @@ while True:
             stage5_activated = True
             print_report("Сброс первой ступени")
 
-    if APOAPSIS >= target_altitude:
+    #print(APOAPSIS)
+    if APOAPSIS >= target_apoapsis:
         break
 
 vessel.control.activate_next_stage()
@@ -131,11 +126,11 @@ ALTITUDE = altitude()
 print_report(f"Апогей {round(APOAPSIS)} м достигнут. Тяга 0.0")
 print(f"Время {round(x[-1])} с | Скорость {round(yV[-1])} м/с | Высота {round(yH[-1])} м")
 
-MathModel.createGraphics(x, yV, yVh, yH, round(x[-1]))
+MathModel.saveResults(FILENAME_RESULTS_KSP, x, yV, yH)
+MathModel.createGraphics(x, yV, yH)
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-# Plan circularization burn (using vis-viva equation)
 print_report('Планирование выхода на орбиту')
 mu = vessel.orbit.body.gravitational_parameter
 r = vessel.orbit.apoapsis
@@ -147,9 +142,8 @@ delta_v = v2 - v1
 node = vessel.control.add_node(
     ut() + vessel.orbit.time_to_apoapsis, prograde=delta_v)
 
-# Calculate burn time (using rocket equation)
 F = vessel.available_thrust
-Isp = vessel.specific_impulse * 9.82
+Isp = vessel.specific_impulse * 9.81
 m0 = vessel.mass
 m1 = m0 / math.exp(delta_v/Isp)
 flow_rate = F / Isp
@@ -174,7 +168,7 @@ vessel.control.throttle = 0.15
 print_report("Тяга 0.15")
 remaining_burn = conn.add_stream(node.remaining_burn_vector, node.reference_frame)
 while remaining_burn()[1] > 4:
-    pass
+    remaining_burn()[1]
 vessel.control.throttle = 0.0
 node.remove()
 print_report(f"Корабль выведен на орбиту. Апогей {apoapsis()} м. Тяга 0.0")
