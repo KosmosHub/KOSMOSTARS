@@ -2,35 +2,47 @@ import math
 import matplotlib.pyplot as plt
 from scipy import integrate
 
+FILENAME_RESULTS_MATHMOD = "resultsMathmod.txt"
+END_TIME = 200
+
 PI = math.pi
+
+# Начальные параметры
+g = -9.81
 H_0 = 83
 turn_start_time = 20
 turn_end_time = 175
-P = PI / 360
 K = 0.75
+
+
+def saveResults(filename, x, yV, yH):
+    with open(filename, "wt", encoding="UTF-8") as file:
+        file.write("Time; Velocity; Height\n")
+        for i in range(len(x)):
+            file.write(f"{x[i]}; {yV[i]}; {yH[i]}\n")
+
+
+# Угол между вектором тяги двигателя и вертикалью по программе полета
+def u(t: int):
+    return (t < turn_start_time) * 0 + (turn_start_time <= t <= turn_end_time) * min(PI / 2, PI / 2 * (t - turn_start_time) / (turn_end_time - turn_start_time)) + (t > turn_end_time) * (PI / 2)
 
 
 # Угол между вертикалью и вектором скорости ракеты
 def alpha(t: int):
-    return (t < turn_start_time) * 0 + (turn_start_time <= t <= turn_end_time) * K * PI/2 * (t - turn_start_time)/(turn_end_time - turn_start_time) + (t > turn_end_time) * K * PI/2
+    return K * u(t)
 
 
 # Угол между вектором силы тяги двигателя и вектором местного ускорения свободного падения в момент времени t
 def gamma(t: int):
-    return (t < turn_start_time) * PI + (turn_start_time <= t <= turn_end_time) * max(PI/2 + P, PI - PI/2 * (t - turn_start_time)/(turn_end_time - turn_start_time)) + (t > turn_end_time) * (PI/2 + P)
-
-
-# Местное ускорение свободного падения в момент времени t
-def g(t: int):
-    return 9.81
+    return PI - u(t)
 
 
 # Гравитационные потери скорости в момент времени t
 def deltaV_g(t: int):
     def f(t: int):
-        return g(t) * (-math.cos(gamma(t)))
+        return math.cos(gamma(t))
 
-    return integrate.quad(f, 0, t)[0]
+    return g * integrate.quad(f, 0, t)[0]
 
 
 # Формула Циолковского - характеристическая скорость в момент времени t
@@ -59,53 +71,43 @@ def V_l(t: int):
 
 
 # Высота в момент времени t
-def h(xV_h: list, yV_h: list, t: int):
-    return H_0 + integrate.trapezoid(yV_h[:t], xV_h[:t])
+def h(x: list, yV_h: list, t_ind: int):
+    return H_0 + integrate.trapezoid(yV_h[:t_ind], x[:t_ind])
 
 
 # Число ступеней
 N = 3
 # Масса полезной нагрузки
 M0 = 870
-# Масса заправленной ступени
+# Масса заправленной i-й ступени
 m0 = [None, 202_960, 83_551, 3_908]
-# Масса ступени без топлива
+# Масса i-й ступени без топлива
 m1 = [None, 50_960, 17_851, 1308]
-# Удельный импульс ступени в м/с
-I = [None, 2797.8, 3089.1, 3481.4]
-# Расход топлива ступени
-m = [None, 1431, 304, 16]
-# Время работы ступени
+# Удельный импульс i-й ступени в м/с
+I = [None, 2796, 3090, 3483]
+# Расход топлива i-й ступени
+m = [None, 1430, 304, 16]
+# Время работы i-й ступени
 t_i = [None, 106, 216, 163]
 
 
-def createGraphics(kspx, kspyV, kspyVh, kspyH, printTime):
-    x = []
-    yVch = []  # Характеристическая скорость
+def createGraphics(kspx=tuple(x for x in range(END_TIME)),
+                   kspyV=tuple(0 for x in range(END_TIME)),
+                   kspyH=tuple(0 for x in range(END_TIME))):
     yV = []  # Итоговая скорость
     yVh = []  # Вертикальная проекция скорости
-    yVl = []  # Горизонтальная проекция скорости
     yH = []  # Высота
-    ygamma = []
-    ydeltaV_g = []  # Гравитационные потери скорости
-    t = 0
-    i = 0
-    while t < sum(t_i[1:]):
-        t += 0.5
-        i += 1
-        x.append(t)
-        yVch.append(V_ch(t))
-        yV.append(V(t))
+    for i in range(len(kspx)):
+        t = kspx[i]
+        yV.append(round(V(t)))
         yVh.append(V_h(t))
-        yVl.append(V_l(t))
-        yH.append(h(x, yVh, i))
-        ygamma.append(gamma(t))
-        ydeltaV_g.append(t)
-    print(x[x.index(printTime)], yV[x.index(printTime)])
-    print(x[x.index(printTime)], yH[x.index(printTime)])
+        yH.append(round(h(kspx, yVh, i + 1)))
+    saveResults(FILENAME_RESULTS_MATHMOD, kspx, yV, yH)
+    calc_error(kspx, yV, yH, kspyV, kspyH)
+
     plt.subplot(211)
     plt.title("Скорость")
-    plt.plot(x, yV)
+    plt.plot(kspx, yV)
     plt.plot(kspx, kspyV)
     plt.legend([
         "Мат. модель",
@@ -116,7 +118,7 @@ def createGraphics(kspx, kspyV, kspyVh, kspyH, printTime):
 
     plt.subplot(212)
     plt.title("Набранная высота")
-    plt.plot(x, yH)
+    plt.plot(kspx, yH)
     plt.plot(kspx, kspyH)
     plt.legend([
         "Мат. модель",
@@ -127,6 +129,34 @@ def createGraphics(kspx, kspyV, kspyVh, kspyH, printTime):
 
     plt.show()
 
+
+def calc_error(x, yV_m, yH_m, yV_ksp, yH_ksp):
+    V_abs_err = 0
+    V_rel_err = None
+    V_point = None
+    H_abs_err = 0
+    H_rel_err = None
+    H_point = None
+    for i in range(len(x)):
+        V_var = abs(yV_m[i] - yV_ksp[i])
+        H_var = abs(yH_m[i] - yH_ksp[i])
+        if V_var > V_abs_err:
+            V_abs_err = V_var
+            V_rel_err = V_abs_err / yV_m[i] * 100
+            V_point = x[i]
+        if H_var > H_abs_err:
+            H_abs_err = H_var
+            H_rel_err = H_abs_err / yH_m[i] * 100
+            H_point = x[i]
+    print("Погрешность в точке максимального расхождения графиков")
+    print(f"Скорость ({V_point} с)")
+    print(f"    Абсолютная погрешность {V_abs_err} м/с")
+    print(f"    Относительная погрешность {V_rel_err} %")
+    print(f"Высота ({H_point} с)")
+    print(f"    Абсолютная погрешность {H_abs_err} м")
+    print(f"    Относительная погрешность {H_rel_err} %")
+
+
 runMathModel = False
 if runMathModel:
-    createGraphics([], [], [], [], 188)
+    createGraphics()
